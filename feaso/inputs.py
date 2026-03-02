@@ -1,314 +1,75 @@
-"""FeasoInputs — All model assumptions with defaults from Feaso Model Draft v22."""
+"""FeasoInputs — All model assumptions with defaults from Feaso Model Draft v22.
+
+This module is the single entry point for consumer modules. It composes
+inputs from five separate "page" modules that mirror the Excel sheet tabs:
+
+  Admin              → :class:`~feaso.input_admin.AdminInputs`
+  !!! - Input        → :class:`~feaso.input_main.MainInputs`
+  Inputs_TD_Actual   → :class:`~feaso.input_td_actual.TDActualInputs`
+  Rev_Costs actual   → :class:`~feaso.input_rev_costs.RevCostsInputs`
+  Scenario Manager   → :class:`~feaso.input_scenario.ScenarioManagerInputs`
+
+Backward-compatible: consumer modules can still do
+``from .inputs import FeasoInputs, DebtFacility, EquityPartner`` etc.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+# ── Shared helper types (re-exported for backward compat) ──────────────
+from .types import (
+    CostLineItem,
+    DebtFacility,
+    EquityPartner,
+    LandPaymentStage,
+    RevenueLineItem,
+)
 
-# ── Helper dataclasses ────────────────────────────────────────────────
+# ── Page-level input dataclasses ───────────────────────────────────────
+from .input_admin import AdminInputs
+from .input_main import MainInputs
+from .input_rev_costs import RevCostsInputs
+from .input_scenario import ScenarioManagerInputs
+from .input_td_actual import TDActualInputs
 
-@dataclass
-class CostLineItem:
-    """A single cost line item (exc GST)."""
-    code: int
-    description: str
-    cost_type: str          # "Development", "Construction", "Marketing", etc.
-    total_cost: float       # Total cost (exc GST)
-    scurve_type: str        # "Evenly Split", "Manual S-curve 1", "36 Month Build", etc.
-    month_start: int        # Period index (1-based) when cost begins
-    month_span: int         # Number of months to distribute over
-    gst_applicable: bool = True   # Whether GST applies to this item
+# ── Default factory functions (delegated to page modules) ──────────────
+from .input_main import (
+    _default_debt_facilities,
+    _default_equity_partners,
+    _default_land_stages,
+)
+from .input_rev_costs import _default_cost_items, _default_revenue_items
+from .input_td_actual import _default_senior_rate_schedule
 
-
-@dataclass
-class RevenueLineItem:
-    """A single revenue line item (inc GST)."""
-    code: int
-    description: str
-    revenue_type: str       # "Residential", "Management Rights", etc.
-    num_units: int
-    total_area_sqm: float
-    sale_price_inc_gst: float
-    presale_exchange_start: int
-    presale_exchange_span: int
-    settlement_start: int
-    settlement_span: int
-    gst_on_sales: bool = True
-
-
-@dataclass
-class LandPaymentStage:
-    """A staged land payment."""
-    description: str
-    amount: float           # Payment amount
-    month: int              # Period index when payment occurs
-
-
-@dataclass
-class EquityPartner:
-    """Configuration for an equity partner."""
-    name: str
-    fixed_amount: float     # Negative = injection
-    interest_rate: float    # Annual rate
-    compound_interest: bool
-    equity_contribution_pct: float
-    profit_share_pct: float
-    repay_before_debt_pct: float = 0.0
-
-
-@dataclass
-class DebtFacility:
-    """Configuration for a debt facility."""
-    name: str
-    facility_limit: float
-    is_fixed_amount: bool   # True = lump sum draw, False = progressive
-    ltc_target: float       # Loan-to-Cost target (for progressive draws)
-    lvr_target: float       # Loan-to-Value target
-    interest_rate: float    # Annual nominal rate (or base margin)
-    compound_interest: bool
-    start_month: int        # Period when facility starts
-    end_month: int          # Maturity period
-    application_fee_pct: float
-    line_fee_pct: float
-    standby_fee_pct: float
-    fees_capitalised: bool
-    profit_split_pct: float = 0.0
-    # For variable-rate facilities: period → annual rate
-    interest_rate_schedule: Optional[Dict[int, float]] = None
-    # Refinanced by equity or another loan at end
-    refinanced_by: str = "Equity"
-    active: bool = True
-
-
-# ── Default data from Excel ───────────────────────────────────────────
-
-def _default_land_stages() -> List[LandPaymentStage]:
-    """Staged land payments from !!! - Input sheet."""
-    return [
-        LandPaymentStage("Deposit (10%)", 1_120_920.0, 1),
-        LandPaymentStage("Settlement Balance", 10_088_275.0, 23),
-    ]
-
-
-def _default_cost_items() -> List[CostLineItem]:
-    """Cost line items matching Excel category totals."""
-    return [
-        # ── Development costs (~$5.32M exc GST) ──
-        CostLineItem(2001, "Accounting Fees",           "Development", 150_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2002, "Bank & Financial Fees",     "Development", 100_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2003, "Council Rates / Charges",   "Development", 350_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2004, "Design Consultants",        "Development", 1_200_000, "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2005, "Insurance",                 "Development", 250_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2006, "Legal Fees",                "Development", 500_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2007, "Levies / Contributions",    "Development", 1_350_000, "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2008, "Project Contingency",       "Development", 800_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2009, "Statutory Authority Fees",  "Development", 300_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2010, "Survey & Investigation",    "Development", 200_000,   "Manual S-curve 1", 10, 32, True),
-        CostLineItem(2011, "Town Planning",             "Development", 120_000,   "Manual S-curve 1", 10, 32, True),
-        # ── Construction costs (~$64,878 exc GST in cashflow) ──
-        CostLineItem(3001, "Construction (Living)",     "Construction", 64_878,   "Evenly Split",     41, 35, True),
-        # ── Marketing & Advertising (~$1.87M) ──
-        CostLineItem(5001, "Marketing & Advertising",   "Marketing", 1_500_000,   "Evenly Split",     20, 50, True),
-        CostLineItem(5002, "Display Suite",             "Marketing",   370_000,   "Evenly Split",     20, 50, True),
-        # ── Other Standard Costs (~$4.39M) ──
-        CostLineItem(6001, "Body Corp / OC Setup",     "Other Standard", 500_000, "Evenly Split",    60, 15, True),
-        CostLineItem(6002, "Council Rates (Holding)",   "Other Standard", 890_000, "Evenly Split",    1,  75, True),
-        CostLineItem(6003, "Land Tax",                  "Other Standard", 2_500_000,"Evenly Split",   1,  75, False),
-        CostLineItem(6004, "Strata / Subdivision",      "Other Standard", 500_000, "Evenly Split",    55, 20, True),
-        # ── Dev & Project Management (~$5.66M) ──
-        CostLineItem(7001, "Development Management Fee","Dev Management", 3_400_000,"Evenly Split",   1,  75, True),
-        CostLineItem(7002, "Project Management Fee",    "Dev Management", 2_260_000,"Evenly Split",   1,  75, True),
-    ]
-
-
-def _default_revenue_items() -> List[RevenueLineItem]:
-    """Revenue line items from !!! - Input sheet."""
-    return [
-        RevenueLineItem(
-            code=9001,
-            description="Apartment Revenue - Standard SP1",
-            revenue_type="Residential",
-            num_units=166,
-            total_area_sqm=12_204.0,
-            sale_price_inc_gst=203_098_324.0,
-            presale_exchange_start=20,
-            presale_exchange_span=50,
-            settlement_start=70,
-            settlement_span=1,
-            gst_on_sales=True,
-        ),
-        RevenueLineItem(
-            code=9002,
-            description="Apartment Revenue - Premium SP2",
-            revenue_type="Residential",
-            num_units=11,
-            total_area_sqm=1_980.0,
-            sale_price_inc_gst=56_434_569.0,
-            presale_exchange_start=20,
-            presale_exchange_span=50,
-            settlement_start=70,
-            settlement_span=1,
-            gst_on_sales=True,
-        ),
-        RevenueLineItem(
-            code=9003,
-            description="Management Rights",
-            revenue_type="Management Rights",
-            num_units=1,
-            total_area_sqm=0.0,
-            sale_price_inc_gst=2_892_500.0,
-            presale_exchange_start=70,
-            presale_exchange_span=1,
-            settlement_start=75,
-            settlement_span=1,
-            gst_on_sales=True,
-        ),
-    ]
-
-
-def _default_equity_partners() -> List[EquityPartner]:
-    """Equity partners from !!! - Input sheet."""
-    return [
-        EquityPartner(
-            name="Kokoda Property Group",
-            fixed_amount=-115_722_322.88,  # Progressive injection
-            interest_rate=0.0,
-            compound_interest=False,
-            equity_contribution_pct=1.0,
-            profit_share_pct=1.0,
-        ),
-        EquityPartner(
-            name="JV Partner",
-            fixed_amount=0.0,
-            interest_rate=0.0,
-            compound_interest=False,
-            equity_contribution_pct=0.0,
-            profit_share_pct=0.0,
-        ),
-        EquityPartner(
-            name="Preferred Equity",
-            fixed_amount=0.0,
-            interest_rate=0.13,
-            compound_interest=True,
-            equity_contribution_pct=0.0,
-            profit_share_pct=0.0,
-        ),
-        EquityPartner(
-            name="Additional Equity",
-            fixed_amount=0.0,
-            interest_rate=0.0,
-            compound_interest=False,
-            equity_contribution_pct=0.0,
-            profit_share_pct=0.0,
-        ),
-    ]
-
-
-def _default_senior_rate_schedule() -> Dict[int, float]:
-    """Senior Construction variable interest rate schedule (period → annual rate).
-
-    Extracted from Excel !!! - Cashflow row 158. Rates represent BBSY + margin.
-    """
-    schedule: Dict[int, float] = {}
-    # Rates change roughly every 2-3 periods, declining from ~5.55% to 4.11%
-    rate_bands = [
-        (43, 44, 0.0555),
-        (45, 47, 0.0620),
-        (48, 50, 0.0595),
-        (51, 53, 0.0575),
-        (54, 56, 0.0550),
-        (57, 59, 0.0535),
-        (60, 62, 0.0520),
-        (63, 65, 0.0511),
-        (66, 68, 0.0455),
-        (69, 79, 0.0411),
-    ]
-    for start, end, rate in rate_bands:
-        for p in range(start, end + 1):
-            schedule[p] = rate
-    return schedule
-
-
-def _default_debt_facilities() -> List[DebtFacility]:
-    """Debt facilities from !!! - Input sheet."""
-    return [
-        DebtFacility(
-            name="Land Loan",
-            facility_limit=8_400_000.0,
-            is_fixed_amount=True,
-            ltc_target=0.0,
-            lvr_target=0.0,
-            interest_rate=0.10135,       # 10.135% fixed annual
-            compound_interest=True,
-            start_month=23,
-            end_month=43,                # Repaid when Senior starts (P43, same period Senior draws)
-            application_fee_pct=0.01,
-            line_fee_pct=0.005,
-            standby_fee_pct=0.0,
-            fees_capitalised=True,
-            refinanced_by="Senior Construction",
-            active=True,
-        ),
-        DebtFacility(
-            name="Mezzanine",
-            facility_limit=0.0,
-            is_fixed_amount=False,
-            ltc_target=0.0,
-            lvr_target=0.0,
-            interest_rate=0.15,
-            compound_interest=True,
-            start_month=1,
-            end_month=75,
-            application_fee_pct=0.0,
-            line_fee_pct=0.0,
-            standby_fee_pct=0.0,
-            fees_capitalised=True,
-            active=False,
-        ),
-        DebtFacility(
-            name="Senior Construction",
-            facility_limit=154_546_628.0,
-            is_fixed_amount=False,        # Progressive draws
-            ltc_target=0.84,
-            lvr_target=0.754,
-            interest_rate=0.0215,         # Base margin (added to BBSY)
-            compound_interest=True,
-            start_month=43,
-            end_month=79,                 # Bullet repayment
-            application_fee_pct=0.01,
-            line_fee_pct=0.005,
-            standby_fee_pct=0.0025,
-            fees_capitalised=True,
-            interest_rate_schedule=None,  # Populated from factory fn
-            active=True,
-        ),
-        DebtFacility(
-            name="Additional Debt",
-            facility_limit=0.0,
-            is_fixed_amount=False,
-            ltc_target=0.0,
-            lvr_target=0.0,
-            interest_rate=0.10,
-            compound_interest=True,
-            start_month=1,
-            end_month=75,
-            application_fee_pct=0.0,
-            line_fee_pct=0.0,
-            standby_fee_pct=0.0,
-            fees_capitalised=True,
-            active=False,
-        ),
-    ]
+# Re-export everything consumers might need
+__all__ = [
+    "FeasoInputs",
+    "CostLineItem",
+    "RevenueLineItem",
+    "LandPaymentStage",
+    "EquityPartner",
+    "DebtFacility",
+    "AdminInputs",
+    "MainInputs",
+    "TDActualInputs",
+    "RevCostsInputs",
+    "ScenarioManagerInputs",
+]
 
 
 # ── Main inputs dataclass ─────────────────────────────────────────────
+
 
 @dataclass
 class FeasoInputs:
     """All model assumptions for the Feaso Property Development Feasibility Model.
 
     Defaults are baked in from the *Feaso Model Draft v22* Excel workbook.
+    Individual page defaults come from the five input-page modules.
+
+    Use :meth:`from_pages` to construct from explicit page dataclass instances.
     """
 
     # ── Project General ──────────────────────────────────────────────
@@ -374,6 +135,71 @@ class FeasoInputs:
         for fac in self.debt_facilities:
             if fac.name == "Senior Construction" and fac.interest_rate_schedule is None:
                 fac.interest_rate_schedule = _default_senior_rate_schedule()
+
+    # ── Factory: construct from individual page dataclasses ──────────
+
+    @classmethod
+    def from_pages(
+        cls,
+        admin: Optional[AdminInputs] = None,
+        main: Optional[MainInputs] = None,
+        td_actual: Optional[TDActualInputs] = None,
+        rev_costs: Optional[RevCostsInputs] = None,
+        scenario: Optional[ScenarioManagerInputs] = None,
+    ) -> "FeasoInputs":
+        """Build a :class:`FeasoInputs` from five page-level dataclasses.
+
+        Any page left as *None* uses its own defaults. The *scenario*
+        page is accepted but not applied here — scenario adjustments
+        are handled externally by the scenario engine.
+        """
+        adm = admin or AdminInputs()
+        mn = main or MainInputs()
+        td = td_actual or TDActualInputs()
+        rc = rev_costs or RevCostsInputs()
+
+        # Attach variable rate schedule to Senior Construction in main's debt
+        for fac in mn.debt_facilities:
+            if fac.name == "Senior Construction" and fac.interest_rate_schedule is None:
+                fac.interest_rate_schedule = dict(td.senior_rate_schedule)
+
+        return cls(
+            # ── From AdminInputs ──
+            num_periods=adm.num_periods,
+            date_of_first_period=adm.date_of_first_period,
+            gst_rate=adm.gst_rate,
+            project_start_month=adm.project_start_month,
+            project_span_months=adm.project_span_months,
+            project_end_month=adm.project_end_month,
+            equity_dist_start=adm.equity_dist_start,
+            equity_dist_end=adm.equity_dist_end,
+            stamp_duty_state=adm.stamp_duty_state,
+            # ── From MainInputs ──
+            project_name=mn.project_name,
+            address=mn.address,
+            developer=mn.developer,
+            revision=mn.revision,
+            project_lots=mn.project_lots,
+            project_gfa_sqm=mn.project_gfa_sqm,
+            site_area_sqm=mn.site_area_sqm,
+            land_purchase_price=mn.land_purchase_price,
+            prsv_uplift=mn.prsv_uplift,
+            prsv_month=mn.prsv_month,
+            gst_applicable_land_value=mn.gst_applicable_land_value,
+            stamp_duty_amount=mn.stamp_duty_amount,
+            land_payment_stages=mn.land_payment_stages,
+            acquisition_costs_total=mn.acquisition_costs_total,
+            acquisition_month=mn.acquisition_month,
+            selling_commission_rate=mn.selling_commission_rate,
+            presale_commission_pct=mn.presale_commission_pct,
+            deposit_pct=mn.deposit_pct,
+            selling_other_costs=mn.selling_other_costs,
+            equity_partners=mn.equity_partners,
+            debt_facilities=mn.debt_facilities,
+            # ── From RevCostsInputs ──
+            cost_items=rc.cost_items,
+            revenue_items=rc.revenue_items,
+        )
 
     # ── Convenience accessors ────────────────────────────────────────
 

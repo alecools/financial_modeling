@@ -361,6 +361,11 @@ elif model_choice == "Feaso Development Model":
     from copy import deepcopy
 
     from feaso.inputs import FeasoInputs
+    from feaso.input_admin import AdminInputs
+    from feaso.input_main import MainInputs
+    from feaso.input_td_actual import TDActualInputs
+    from feaso.input_rev_costs import RevCostsInputs
+    from feaso.input_scenario import ScenarioManagerInputs
     from feaso.cashflow import run_model, build_cashflow_dataframe
     from feaso.summary import build_summary, format_summary_for_display, FeasoSummary
     from feaso.checks import checks_summary
@@ -391,89 +396,154 @@ elif model_choice == "Feaso Development Model":
         return f"{v * 100:.1f}%"
 
     # ─────────────────────────────────────────────────────────────────
-    # Sidebar — Feaso Assumptions & Overrides
+    # Sidebar — 5 Excel-sheet tab expanders
     # ─────────────────────────────────────────────────────────────────
     st.sidebar.header("Feaso Assumptions")
 
-    with st.sidebar.expander("Project Overview", expanded=True):
-        st.sidebar.markdown(f"**Project:** Fake House")
-        st.sidebar.markdown(f"**Lots:** 178 | **GFA:** 32,133 sqm")
-        st.sidebar.markdown(f"**Land Purchase:** $11.2M")
+    # ── 1. Admin ──
+    with st.sidebar.expander("📋 Admin", expanded=False):
+        sb_num_periods = st.number_input(
+            "Number of Periods", value=80, min_value=40, max_value=120, step=5,
+            help="Total model cashflow periods (months)",
+        )
+        sb_project_start = st.number_input(
+            "Project Start Month", value=41, min_value=1, max_value=80, step=1,
+            help="Month when construction/main works start",
+        )
+        sb_project_span = st.number_input(
+            "Project Span (months)", value=35, min_value=6, max_value=60, step=1,
+            help="Duration of main works in months",
+        )
+        sb_project_end = st.number_input(
+            "Project End Month", value=75, min_value=40, max_value=120, step=1,
+            help="Last active project month",
+        )
+        sb_equity_dist_start = st.number_input(
+            "Equity Dist. Start", value=70, min_value=1, max_value=120, step=1,
+            help="Month equity repatriation begins",
+        )
+        sb_equity_dist_end = st.number_input(
+            "Equity Dist. End", value=75, min_value=1, max_value=120, step=1,
+            help="Month equity repatriation ends",
+        )
+        sb_gst_rate = st.number_input(
+            "GST Rate", value=0.10, min_value=0.0, max_value=0.20,
+            step=0.01, format="%.2f", help="Goods and Services Tax rate",
+        )
+        sb_stamp_duty_state = st.selectbox(
+            "Stamp Duty State", options=["QLD", "VIC"], index=0,
+            help="State for stamp duty calculation",
+        )
 
-    with st.sidebar.expander("Revenue Adjustments", expanded=False):
-        revenue_mult = st.number_input(
-            "Revenue Multiplier",
-            value=1.00, min_value=0.50, max_value=2.00,
-            step=0.05, format="%.2f",
-            help="Multiply all sale prices (1.0 = no change, 1.1 = +10%)",
+    # ── 2. !!! – Input ──
+    with st.sidebar.expander("📊 !!! – Input", expanded=True):
+        st.markdown("**Project:** Fake House")
+        sb_project_lots = st.number_input(
+            "Project Lots", value=178, min_value=1, max_value=1000, step=1,
         )
-        settlement_delay = st.number_input(
-            "Settlement Delay (months)",
-            value=0, min_value=0, max_value=12, step=1,
-            help="Delay all settlement starts by N months",
+        sb_project_gfa = st.number_input(
+            "GFA (sqm)", value=32_133.0, min_value=100.0, max_value=100_000.0,
+            step=100.0, format="%.0f",
         )
-
-    with st.sidebar.expander("Cost Adjustments", expanded=False):
-        cost_mult = st.number_input(
-            "Cost Multiplier",
-            value=1.00, min_value=0.50, max_value=2.00,
-            step=0.05, format="%.2f",
-            help="Multiply all cost items (1.0 = no change, 1.2 = +20%)",
+        sb_site_area = st.number_input(
+            "Site Area (sqm)", value=2_000.0, min_value=100.0, max_value=50_000.0,
+            step=100.0, format="%.0f",
         )
-        land_price_override = st.number_input(
-            "Land Purchase Price ($)",
-            value=11_209_195, step=500_000, format="%d",
+        sb_land_price = st.number_input(
+            "Land Purchase Price ($)", value=11_209_195, step=500_000, format="%d",
             help="Override the land purchase price",
         )
+        sb_selling_commission = st.number_input(
+            "Selling Commission Rate", value=0.027247, min_value=0.0, max_value=0.10,
+            step=0.001, format="%.4f",
+            help="Commission rate applied to inc-GST GRV",
+        )
+        sb_senior_limit = st.number_input(
+            "Senior Facility Limit ($)", value=154_546_628, step=1_000_000, format="%d",
+            help="Override the Senior Construction facility limit",
+        )
 
-    with st.sidebar.expander("Financing Adjustments", expanded=False):
-        interest_rate_adj = st.number_input(
+    # ── 3. Inputs_TD_Actual ──
+    with st.sidebar.expander("📈 Inputs_TD_Actual", expanded=False):
+        sb_rate_adj = st.number_input(
             "Interest Rate Adjustment (pp)",
             value=0.00, min_value=-0.05, max_value=0.10,
             step=0.005, format="%.3f",
             help="Add/subtract percentage points to all debt rates",
         )
-        senior_limit_override = st.number_input(
-            "Senior Facility Limit ($)",
-            value=154_546_628, step=1_000_000, format="%d",
-            help="Override the Senior Construction facility limit",
+
+    # ── 4. Rev_Costs actual ──
+    with st.sidebar.expander("💰 Rev_Costs actual", expanded=False):
+        sb_revenue_mult = st.number_input(
+            "Revenue Multiplier",
+            value=1.00, min_value=0.50, max_value=2.00,
+            step=0.05, format="%.2f",
+            help="Multiply all sale prices (1.0 = no change, 1.1 = +10%)",
+        )
+        sb_cost_mult = st.number_input(
+            "Cost Multiplier",
+            value=1.00, min_value=0.50, max_value=2.00,
+            step=0.05, format="%.2f",
+            help="Multiply all cost items (1.0 = no change, 1.2 = +20%)",
+        )
+        sb_settle_delay = st.number_input(
+            "Settlement Delay (months)",
+            value=0, min_value=0, max_value=12, step=1,
+            help="Delay all settlement starts by N months",
         )
 
-    # ── Build adjusted inputs ──
-    @st.cache_data(show_spinner="Running Feaso model...")
-    def _run_feaso(
-        rev_mult: float,
-        settle_delay: int,
-        cost_mult: float,
-        land_price: int,
-        rate_adj: float,
-        senior_limit: int,
+    # ── 5. Scenario Manager ──
+    with st.sidebar.expander("🎯 Scenario Manager", expanded=False):
+        st.info("Scenario analysis is available in the **Sensitivity** tab. "
+                "Scenarios apply automatic overrides to revenue, costs, "
+                "settlement timing, and interest rates.")
+
+    # ── Shared helper: build FeasoInputs from page objects + overrides ──
+    def _build_adjusted_inputs(
+        num_periods, project_start, project_span, project_end,
+        equity_dist_start, equity_dist_end, gst_rate, stamp_duty_state,
+        project_lots, project_gfa, site_area, land_price,
+        selling_commission, senior_limit,
+        rate_adj, revenue_mult, cost_mult, settle_delay,
     ):
-        inputs = FeasoInputs()
+        """Construct FeasoInputs from five page objects with sidebar overrides."""
+        admin = AdminInputs(
+            num_periods=num_periods,
+            project_start_month=project_start,
+            project_span_months=project_span,
+            project_end_month=project_end,
+            equity_dist_start=equity_dist_start,
+            equity_dist_end=equity_dist_end,
+            gst_rate=gst_rate,
+            stamp_duty_state=stamp_duty_state,
+        )
+        main = MainInputs(
+            project_lots=project_lots,
+            project_gfa_sqm=project_gfa,
+            site_area_sqm=site_area,
+            land_purchase_price=float(land_price),
+            selling_commission_rate=selling_commission,
+        )
+        td_actual = TDActualInputs()
+        rev_costs = RevCostsInputs()
 
-        # Apply revenue multiplier
-        if rev_mult != 1.0:
-            for item in inputs.revenue_items:
-                item.sale_price_inc_gst *= rev_mult
+        inputs = FeasoInputs.from_pages(
+            admin=admin, main=main, td_actual=td_actual, rev_costs=rev_costs,
+        )
 
-        # Apply settlement delay
-        if settle_delay > 0:
-            for item in inputs.revenue_items:
-                item.settlement_start += settle_delay
-
-        # Apply cost multiplier
-        if cost_mult != 1.0:
-            for item in inputs.cost_items:
-                item.total_cost *= cost_mult
-
-        # Apply land price override
+        # Proportional land stage adjustments
         if land_price != 11_209_195:
             ratio = land_price / 11_209_195
-            inputs.land_purchase_price = float(land_price)
             for stage in inputs.land_payment_stages:
                 stage.amount *= ratio
 
-        # Apply interest rate adjustment
+        # Senior facility limit override
+        if senior_limit != 154_546_628:
+            for fac in inputs.debt_facilities:
+                if "Senior" in fac.name:
+                    fac.facility_limit = float(senior_limit)
+
+        # Interest rate adjustment
         if rate_adj != 0.0:
             for fac in inputs.debt_facilities:
                 fac.interest_rate += rate_adj
@@ -483,24 +553,52 @@ elif model_choice == "Feaso Development Model":
                         for k, v in fac.interest_rate_schedule.items()
                     }
 
-        # Apply senior limit override
-        if senior_limit != 154_546_628:
-            for fac in inputs.debt_facilities:
-                if "Senior" in fac.name:
-                    fac.facility_limit = float(senior_limit)
+        # Revenue multiplier
+        if revenue_mult != 1.0:
+            for item in inputs.revenue_items:
+                item.sale_price_inc_gst *= revenue_mult
 
-        # Run the model
+        # Cost multiplier
+        if cost_mult != 1.0:
+            for item in inputs.cost_items:
+                item.total_cost *= cost_mult
+
+        # Settlement delay
+        if settle_delay > 0:
+            for item in inputs.revenue_items:
+                item.settlement_start += settle_delay
+
+        return inputs
+
+    # ── Run Feaso model (cached) ──
+    @st.cache_data(show_spinner="Running Feaso model...")
+    def _run_feaso(
+        num_periods, project_start, project_span, project_end,
+        equity_dist_start, equity_dist_end, gst_rate, stamp_duty_state,
+        project_lots, project_gfa, site_area, land_price,
+        selling_commission, senior_limit,
+        rate_adj, revenue_mult, cost_mult, settle_delay,
+    ):
+        inputs = _build_adjusted_inputs(
+            num_periods, project_start, project_span, project_end,
+            equity_dist_start, equity_dist_end, gst_rate, stamp_duty_state,
+            project_lots, project_gfa, site_area, land_price,
+            selling_commission, senior_limit,
+            rate_adj, revenue_mult, cost_mult, settle_delay,
+        )
         result = run_model(inputs)
         summary = build_summary(result)
         display = format_summary_for_display(summary)
         passed, total, check_results = checks_summary(result)
         cf_df = build_cashflow_dataframe(result)
-
         return result, summary, display, passed, total, check_results, cf_df
 
     result, summary, display_metrics, checks_passed, checks_total, check_results, cf_df = _run_feaso(
-        revenue_mult, settlement_delay, cost_mult,
-        land_price_override, interest_rate_adj, senior_limit_override,
+        sb_num_periods, sb_project_start, sb_project_span, sb_project_end,
+        sb_equity_dist_start, sb_equity_dist_end, sb_gst_rate, sb_stamp_duty_state,
+        sb_project_lots, sb_project_gfa, sb_site_area, sb_land_price,
+        sb_selling_commission, sb_senior_limit,
+        sb_rate_adj, sb_revenue_mult, sb_cost_mult, sb_settle_delay,
     )
 
     # ─────────────────────────────────────────────────────────────────
@@ -896,50 +994,29 @@ elif model_choice == "Feaso Development Model":
         # Build base inputs (using current sidebar overrides)
         @st.cache_data(show_spinner="Running scenarios...")
         def _run_scenarios(
-            rev_mult: float,
-            settle_delay: int,
-            cost_mult: float,
-            land_price: int,
-            rate_adj: float,
-            senior_limit: int,
+            num_periods, project_start, project_span, project_end,
+            equity_dist_start, equity_dist_end, gst_rate, stamp_duty_state,
+            project_lots, project_gfa, site_area, land_price,
+            selling_commission, senior_limit,
+            rate_adj, revenue_mult, cost_mult, settle_delay,
         ):
-            inputs = FeasoInputs()
-
-            # Apply sidebar overrides to base
-            if rev_mult != 1.0:
-                for item in inputs.revenue_items:
-                    item.sale_price_inc_gst *= rev_mult
-            if settle_delay > 0:
-                for item in inputs.revenue_items:
-                    item.settlement_start += settle_delay
-            if cost_mult != 1.0:
-                for item in inputs.cost_items:
-                    item.total_cost *= cost_mult
-            if land_price != 11_209_195:
-                ratio = land_price / 11_209_195
-                inputs.land_purchase_price = float(land_price)
-                for stage in inputs.land_payment_stages:
-                    stage.amount *= ratio
-            if rate_adj != 0.0:
-                for fac in inputs.debt_facilities:
-                    fac.interest_rate += rate_adj
-                    if fac.interest_rate_schedule:
-                        fac.interest_rate_schedule = {
-                            k: v + rate_adj
-                            for k, v in fac.interest_rate_schedule.items()
-                        }
-            if senior_limit != 154_546_628:
-                for fac in inputs.debt_facilities:
-                    if "Senior" in fac.name:
-                        fac.facility_limit = float(senior_limit)
-
+            inputs = _build_adjusted_inputs(
+                num_periods, project_start, project_span, project_end,
+                equity_dist_start, equity_dist_end, gst_rate, stamp_duty_state,
+                project_lots, project_gfa, site_area, land_price,
+                selling_commission, senior_limit,
+                rate_adj, revenue_mult, cost_mult, settle_delay,
+            )
             summaries = run_all_scenarios(inputs)
             comp_df = build_comparison_table(summaries)
             return summaries, comp_df
 
         scenario_summaries, comp_df = _run_scenarios(
-            revenue_mult, settlement_delay, cost_mult,
-            land_price_override, interest_rate_adj, senior_limit_override,
+            sb_num_periods, sb_project_start, sb_project_span, sb_project_end,
+            sb_equity_dist_start, sb_equity_dist_end, sb_gst_rate, sb_stamp_duty_state,
+            sb_project_lots, sb_project_gfa, sb_site_area, sb_land_price,
+            sb_selling_commission, sb_senior_limit,
+            sb_rate_adj, sb_revenue_mult, sb_cost_mult, sb_settle_delay,
         )
 
         # Display comparison table
